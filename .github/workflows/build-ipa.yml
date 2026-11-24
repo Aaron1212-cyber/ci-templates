@@ -1,0 +1,35 @@
+name: build-ipa
+on:
+  workflow_call:
+    inputs:
+      scheme:
+        type: string
+        required: true
+      downloads:
+        description: "Space-separated url=path pairs to download before building"
+        type: string
+        default: ""
+jobs:
+  build:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - run: brew install xcodegen
+      - name: Download extra files
+        if: inputs.downloads != ''
+        run: |
+          for p in ${{ inputs.downloads }}; do
+            curl -L -o "${p#*=}" "${p%%=*}"
+          done
+      - run: |
+          if [ -f project.yml ]; then xcodegen; fi
+          PROJ=$(ls -d *.xcodeproj | head -1)
+          xcodebuild -project "$PROJ" -scheme "${{ inputs.scheme }}" -configuration Release \
+            -sdk iphoneos -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build
+          mkdir Payload && cp -R build/Build/Products/Release-iphoneos/*.app Payload/
+          zip -r app.ipa Payload
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ipa
+          path: app.ipa
